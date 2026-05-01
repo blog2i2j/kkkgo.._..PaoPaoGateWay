@@ -200,7 +200,7 @@ load_clash() {
             now_node_after=$(ppgw -apiurl="http://127.0.0.1:""$clash_web_port" -secret="$(getsha256 "$clash_web_password")" -now_node)
             if [ "$now_node_before" = "$now_node_after" ]; then
                 closeall_flag="no"
-                proxytest=$(ppgw -testProxy http://127.0.0.1:1080 -test_node_url "$test_node_url")
+                proxytest=$(ppgw -testProxy http://127.0.0.1:1080 -test_node_url "$test_node_url" -openport_auth "$openport_auth")
                 if [ $? -eq 0 ]; then
                     log "$proxytest" succ
                 else
@@ -263,7 +263,7 @@ load_clash() {
         if [ -f /tmp/allnode.failed ]; then
             if [ "$fall_direct" = "yes" ]; then
                 ppgw -apiurl="http://127.0.0.1:""$clash_web_port" -secret="$(getsha256 "$clash_web_password")" -spec_node="DIRECT" >/dev/tty0
-                www_test=$(ppgw -testProxy http://127.0.0.1:1080 -test_node_url "http://120.53.53.53")
+                www_test=$(ppgw -testProxy http://127.0.0.1:1080 -test_node_url "http://120.53.53.53" -openport_auth "$openport_auth")
                 if [ $? -eq 0 ]; then
                     log "[fall_direct] Switch to DIRECT." succ
                 else
@@ -487,7 +487,7 @@ get_conf() {
         if echo "$down_url" | grep https; then
             sync_ntp
         fi
-        ppgw -downURL "$down_url" -output "$file_down_tmp" >/dev/tty0 2>&1
+        ppgw -downURL "$down_url" -output "$file_down_tmp" -openport_auth "$openport_auth" >/dev/tty0 2>&1
     fi
     echo "127.0.0.1 localhost" >/etc/hosts
     if [ "$down_type" = "ini" ]; then
@@ -1000,7 +1000,7 @@ while true; do
         log "Clash Running OK." succ
         load_singbox
         if [ "$mode" = "suburl" ] && echo "$suburl" | grep -qEo "^ppsub@"; then
-            ppgw -healthcheck "/tmp/ppsub.json" >/dev/tty0 2>&1
+            ppgw -healthcheck "/tmp/ppsub.json" -openport_auth "$openport_auth" >/dev/tty0 2>&1
             if [ $? -eq 0 ]; then
                 echo PPsub health check succ
             else
@@ -1013,7 +1013,7 @@ while true; do
             if [ -z "$test_node_url" ]; then
                 test_node_url="https://www.youtube.com/generate_204"
             fi
-            proxytest=$(ppgw -testProxy http://127.0.0.1:1080 -test_node_url "$test_node_url")
+            proxytest=$(ppgw -testProxy http://127.0.0.1:1080 -test_node_url "$test_node_url" -openport_auth "$openport_auth")
             if echo "$proxytest" | grep -q "success"; then
                 log "$proxytest" succ
             else

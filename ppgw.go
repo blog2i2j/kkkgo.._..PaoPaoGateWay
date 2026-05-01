@@ -62,6 +62,7 @@ var (
 	exDNS                 string
 	healthCheckFile       string
 	ipv6Enabled           bool
+	openportAuth          string
 )
 
 var orange = "\033[38;5;208m"
@@ -252,6 +253,7 @@ func main() {
 	flag.BoolVar(&dnsBurn, "dns_burn", false, "Enable DNS burn mode")
 	flag.StringVar(&exDNS, "ex_dns", "", "Extra DNS servers (comma separated)")
 	flag.StringVar(&healthCheckFile, "healthcheck", "", "Health check config file")
+	flag.StringVar(&openportAuth, "openport_auth", "", "openport auth in user:pass form, used to build local proxy URL")
 	flag.Parse()
 
 	ipv6Enabled = checkIPv6Support()
@@ -292,7 +294,15 @@ func main() {
 		}
 		localProxy := "socks5://127.0.0.1:1080"
 		for i := 0; i <= retries; i++ {
-			success, code, err := checkURLConnectivity(targetURL, localProxy, expectedStatus)
+			var (
+				success bool
+				code    int
+			)
+			err := tryWithLocalProxyURL(localProxy, func(p string) error {
+				var e error
+				success, code, e = checkURLConnectivity(targetURL, p, expectedStatus)
+				return e
+			})
 			if err != nil {
 				fmt.Printf(red+"[PaoPaoGW Health] %s failed: %v\n"+reset, targetURL, err)
 			} else if success {
@@ -758,7 +768,12 @@ func main() {
 			flag.Usage()
 			os.Exit(1)
 		}
-		_, code, err := checkURLConnectivity(testNodeURL, testProxy, "0")
+		var code int
+		err := tryWithLocalProxyURL(testProxy, func(p string) error {
+			var e error
+			_, code, e = checkURLConnectivity(testNodeURL, p, "0")
+			return e
+		})
 
 		if err != nil {
 			fmt.Println("Request error:", err)
@@ -1251,6 +1266,13 @@ func (d *Downloader) Download() error {
 	fmt.Printf(orange+"[PaoPaoGW Get]"+reset+"System DNS failed: %v\n", err)
 
 	fmt.Printf(green + "[PaoPaoGW Get]" + reset + "Trying Socks5 Proxy...\n")
+	if openportAuth != "" {
+		err = d.downloadWithSocks5(openportAuth + "@127.0.0.1:1080")
+		if err == nil {
+			return nil
+		}
+		fmt.Printf(orange+"[PaoPaoGW Get]"+reset+"Socks5 with auth failed: %v, retrying without auth\n", err)
+	}
 	err = d.downloadWithSocks5("127.0.0.1:1080")
 	if err == nil {
 		return nil
@@ -2939,6 +2961,26 @@ func validateRule(rule string, groupNames map[string]bool) bool {
 
 	return groupNames[target]
 }
+func injectProxyAuth(proxyURL string) string {
+	if openportAuth == "" || strings.Contains(proxyURL, "@") {
+		return proxyURL
+	}
+	return strings.Replace(proxyURL, "://", "://"+openportAuth+"@", 1)
+}
+
+// tryWithLocalProxyURL runs fn with auth-injected URL; on failure when auth is
+// set, retries once with the bare URL so a misconfigured openport_auth cannot
+// break ppgw's local-proxy callers.
+func tryWithLocalProxyURL(proxyURL string, fn func(string) error) error {
+	primary := injectProxyAuth(proxyURL)
+	err := fn(primary)
+	if err == nil || openportAuth == "" || primary == proxyURL {
+		return err
+	}
+	fmt.Printf(orange+"[PaoPaoGW] proxy auth failed (%v), retrying without openport_auth\n"+reset, err)
+	return fn(proxyURL)
+}
+
 func checkURLConnectivity(targetURL, proxyAddr, expectedStatus string) (bool, int, error) {
 	proxyURL, err := url.Parse(proxyAddr)
 	if err != nil {
